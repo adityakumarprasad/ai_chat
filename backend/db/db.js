@@ -1,10 +1,14 @@
 import mongoose from "mongoose";
-function connectDB() {
-  mongoose.connect(process.env.MONGODB_KEY ).then(() => {
-    console.log("MongoDB connected");
-  }).catch((err) => {
-    console.log("MongoDB connection error: ", err);
-  });
+
+
+function connect() {
+    mongoose.connect(process.env.MONGODB_URI)
+        .then(() => {
+            console.log("Connected to MongoDB");
+        })
+        .catch(err => {
+            console.log(err);
+        })
 }
 
-export default connectDB;
+export default connect;

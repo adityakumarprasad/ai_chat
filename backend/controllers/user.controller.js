@@ -9,7 +9,7 @@ export const createUserController = async (req, res) => {
   } 
   try{
     const user = await userService.createUser(req.body.email, req.body.password);
-    const token = userModel.user.generateAuthToken();
+    const token = user.generateAuthToken();
     res.status(201).json({ message: 'User created successfully', user , token });
   }
   catch(err) {
