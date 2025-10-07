@@ -4,6 +4,7 @@ export async function createUser(email, password) {
    throw new Error('Email and password are required');
  } 
  const hashedPassword = await User.hashPassword(password);
- const newUser = await new User({ email, password: hashedPassword });
+ const newUser = new User({ email, password: hashedPassword });
+ await newUser.save();
  return newUser;
 }

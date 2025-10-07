@@ -3,10 +3,19 @@ import express from 'express';
 import userRoutes from './routes/user.routes.js';
 import dotenv from 'dotenv';
 dotenv.config();
+import cors from 'cors';
+
+import cookieParser from 'cookie-parser';
+import redisClient from './services/redis.service.js';
 const app = express();
+app.use(cors({
+  origin: 'http://localhost:5173', // Adjust this to your frontend's origin
+  credentials: true // Allow cookies to be sent
+}));
 app.use(morgan('dev'));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+app.use(cookieParser()); 
 app.use('/users', userRoutes);
 
 app.get('/', (req, res) => {
