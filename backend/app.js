@@ -1,6 +1,7 @@
 import morgan from 'morgan';
 import express from 'express';
 import userRoutes from './routes/user.routes.js';
+import projectRoutes from './routes/project.route.js';
 import dotenv from 'dotenv';
 dotenv.config();
 import cors from 'cors';
@@ -17,6 +18,7 @@ app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser()); 
 app.use('/users', userRoutes);
+app.use('/projects', projectRoutes);
 
 app.get('/', (req, res) => {
   res.send('API is running...');
