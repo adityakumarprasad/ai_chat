@@ -1,20 +1,25 @@
-import { ExpressValidator, validationResult } from "express-validator";
-import projectModel from "../models/project.model";
-import userModel from "../models/user.model"
-import * as projectService from "../services/project.service"
+import { validationResult } from "express-validator";
+import Project from "../models/project.model.js";  // ✅ Fixed: Changed from projectModel
+import userModel from "../models/user.model.js";
+import * as projectService from "../services/project.service.js";
 
-export const createProject = async (req ,res)=>{
+export const createProject = async (req, res) => {
   const errors = validationResult(req);
   if(!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
-  try{
-  const {name} = req.body;
-  const loggedInUserId = await userModel.findOne({email: req.user.email});
-  const project = await projectService.createProject(name, loggedInUserId._id);
-  res.status(201).json({ message: 'Project created successfully', project });
+  try {
+    const {name} = req.body;
+    const loggedInUser = await userModel.findOne({email: req.user.email});
+    
+    if(!loggedInUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    const project = await projectService.createProject(name, loggedInUser._id);
+    res.status(201).json({ message: 'Project created successfully', project });
   }
-  catch(err){ 
+  catch(err) { 
     res.status(500).json({ message: err.message });
   }
 }
@@ -24,24 +29,35 @@ export const getProjectsByUserId = async (req, res) => {
   if(!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
-  try{
-    const loggedInUserId = await userModel.findOne({email: req.user.email});
-    const projects = await projectService.getProjectsByUserId(loggedInUserId._id);
+  try {
+    const loggedInUser = await userModel.findOne({email: req.user.email});
+    
+    if(!loggedInUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    const projects = await projectService.getProjectsByUserId(loggedInUser._id);
     res.status(200).json({ message: 'Projects fetched successfully', projects });
   }
   catch(err) {
     res.status(500).json({ message: err.message });
   } 
 }
+
 export const addUserToProject = async (req, res) => {
   const errors = validationResult(req);
   if(!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
-  try{
+  try {
     const { projectId, users } = req.body;
-    const loggedInUserId = await userModel.findOne({email: req.user.email});
-    const project = await projectService.addUserToProject(projectId, loggedInUserId._id, users);
+    const loggedInUser = await userModel.findOne({email: req.user.email});
+    
+    if(!loggedInUser) {
+      return res.status(404).json({ message: 'User not found' });
+    }
+    
+    const project = await projectService.addUserToProject(projectId, loggedInUser._id, users);
     res.status(200).json({ message: 'User added to project successfully', project });
   }
   catch(err) {
@@ -54,9 +70,10 @@ export const getAllProjectsByProjectId = async (req, res) => {
   if(!errors.isEmpty()) {
     return res.status(400).json({ errors: errors.array() });
   }
-  try{
+  try {
     const { projectId } = req.params;
-    const project = await projectService.getProjectByProjectId({projectId});
+    // ✅ Fixed: Pass projectId directly, not as an object
+    const project = await projectService.getProjectByProjectId(projectId);
     res.status(200).json({ message: 'Project fetched successfully', project });
   }
   catch(err) {

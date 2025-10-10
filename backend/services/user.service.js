@@ -8,3 +8,11 @@ export async function createUser(email, password) {
  await newUser.save();
  return newUser;
 }
+
+export const getAllUsers = async (excludeUserId) => {
+  if(!excludeUserId) {
+    throw new Error('User ID is required to fetch users');
+  }
+  const users = await User.find({ _id: { $ne: excludeUserId } }).select('-password');
+  return users;
+}
