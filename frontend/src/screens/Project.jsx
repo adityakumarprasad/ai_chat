@@ -29,6 +29,13 @@ const Project = () => {
     }
     setSelectedUsers(newSelected);
     console.log("Selected Users:", newSelected);
+    axios.put('/projects/add-User', { projectId: , users: newSelected }) // Replace with actual projectId
+      .then(response => {
+        console.log('Users added to project:', response.data);
+      })
+      .catch(error => {
+        console.error('Error adding users to project:', error);
+      });
   };
 
   return (
