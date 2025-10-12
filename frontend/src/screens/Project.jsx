@@ -1,37 +1,30 @@
-import React, { useState } from "react";
-import { useEffect } from "react";
+import React, { useState, useEffect } from "react";
 import axios from "../config.js/axios";
-import { use } from "react";
 
 const Project = () => {
   const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedUsers, setSelectedUsers] = useState([]);
+  const [users, setUsers] = useState([]);
 
-  //users list
-  const [users, setUsers] = useState([])
-
+  // Fetch users on component mount
   useEffect(() => {
     axios.get('/users/all')
       .then(response => {
         setUsers(response.data.users);
-        console.log(response.data.users)
+        console.log(response.data.users);
       })
       .catch(error => {
         console.error('Error fetching users:', error);
       });
-  })
-
-
+  }, []); // Empty dependency array - runs once on mount
 
   // Toggle user selection
   const handleSelectUser = (id) => {
     let newSelected;
     if (selectedUsers.includes(id)) {
-      // Deselect if already selected
       newSelected = selectedUsers.filter((uid) => uid !== id);
     } else {
-      // Add if not selected
       newSelected = [...selectedUsers, id];
     }
     setSelectedUsers(newSelected);
@@ -92,7 +85,6 @@ const Project = () => {
         className={`fixed top-0 left-0 h-full w-64 bg-gray-800 transform transition-transform duration-300 z-20 ${isSidePanelOpen ? "translate-x-0" : "-translate-x-full"
           }`}
       >
-        {/* Close Button */}
         <div className="flex justify-end p-4 border-b border-gray-700">
           <button
             onClick={() => setIsSidePanelOpen(false)}
@@ -102,20 +94,19 @@ const Project = () => {
           </button>
         </div>
 
-        {/* Users List */}
         <div className="users-list p-4 space-y-2">
           {users.map((user) => (
             <div
-              key={user.id}
-              className={`flex items-center space-x-2 p-2 rounded cursor-pointer ${selectedUsers.includes(user.id)
+              key={user._id}
+              className={`flex items-center space-x-2 p-2 rounded cursor-pointer ${selectedUsers.includes(user._id)
                 ? "bg-blue-700"
                 : "bg-gray-700 hover:bg-blue-600"
                 }`}
-              onClick={() => handleSelectUser(user.id)}
+              onClick={() => handleSelectUser(user._id)}
             >
               <i className="ri-user-2-line text-white"></i>
-              <span className="text-white">{user.name}</span>
-              {selectedUsers.includes(user.id) && (
+              <span className="text-white">{user.email}</span>
+              {selectedUsers.includes(user._id) && (
                 <i className="ri-check-line text-white ml-auto"></i>
               )}
             </div>
@@ -142,15 +133,15 @@ const Project = () => {
             <div className="space-y-2 overflow-y-auto max-h-64">
               {users.map((user) => (
                 <div
-                  key={user.id}
-                  className={`flex items-center justify-between p-2 rounded cursor-pointer ${selectedUsers.includes(user.id)
+                  key={user._id}
+                  className={`flex items-center justify-between p-2 rounded cursor-pointer ${selectedUsers.includes(user._id)
                     ? "bg-blue-700"
                     : "bg-gray-700 hover:bg-blue-600"
                     }`}
-                  onClick={() => handleSelectUser(user.id)}
+                  onClick={() => handleSelectUser(user._id)}
                 >
-                  <span>{user.name}</span>
-                  {selectedUsers.includes(user.id) && (
+                  <span>{user.email}</span>
+                  {selectedUsers.includes(user._id) && (
                     <i className="ri-check-line text-white"></i>
                   )}
                 </div>
@@ -168,7 +159,6 @@ const Project = () => {
           </div>
         </div>
       )}
-
     </main>
   );
 };
