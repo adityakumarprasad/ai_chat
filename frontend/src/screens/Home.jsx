@@ -18,7 +18,7 @@ export default function Home() {
         console.log('Project created successfully:', response.data);
         setProjectName("");
         setIsOpen(false);
-        navigate('/project');
+        navigate(`/project?id=${response.data.project._id}`);
       })
       .catch(error => {
         console.error('There was an error creating the project!', error);

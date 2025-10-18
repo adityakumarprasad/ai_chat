@@ -1,24 +1,49 @@
 import React, { useState, useEffect } from "react";
 import axios from "../config.js/axios";
+import { data, useSearchParams } from "react-router-dom";
+import { initializeSocket, sendMessage, recieveMessage } from "../config.js/socket";
+import { useContext } from "react";
+
+import { UserContext } from "../context/user.context.jsx";
+
+
 
 const Project = () => {
   const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedUsers, setSelectedUsers] = useState([]);
+  const [message, setMessage] = useState([]);
   const [users, setUsers] = useState([]);
+  const [searchParams] = useSearchParams();
+  const projectId = searchParams.get("id");
+  const { user } = useContext(UserContext);
 
-  // Fetch users on component mount
+
+  console.log("Project ID from URL:", projectId);
+
+
   useEffect(() => {
-    axios.get('/users/all')
-      .then(response => {
+    initializeSocket(projectId);
+    recieveMessage("project_message", (data) => {
+      console.log("Received project message:", data);
+    });
+
+    axios
+      .get("/users/all")
+      .then((response) => {
         setUsers(response.data.users);
         console.log(response.data.users);
       })
-      .catch(error => {
-        console.error('Error fetching users:', error);
+      .catch((error) => {
+        console.error("Error fetching users:", error);
       });
-  }, []); // Empty dependency array - runs once on mount
+  }, [projectId, user._id]);
 
+  function send() {
+    sendMessage("project_message", { text: message, sender: user._id });
+    console.log(message)
+    setMessage("");
+  }
   // Toggle user selection
   const handleSelectUser = (id) => {
     let newSelected;
@@ -29,15 +54,27 @@ const Project = () => {
     }
     setSelectedUsers(newSelected);
     console.log("Selected Users:", newSelected);
-    axios.put('/projects/add-User', { projectId: , users: newSelected }) // Replace with actual projectId
-      .then(response => {
-        console.log('Users added to project:', response.data);
+  };
+
+  const handleAddUsersToProject = () => {
+    if (!projectId) {
+      console.error("Project ID is missing. Cannot add users to project.");
+      return;
+    }
+
+    axios
+      .put("/projects/add-user", { projectId: projectId, users: selectedUsers })
+      .then((response) => {
+        console.log("Users added to project:", response.data);
+        setIsModalOpen(false);
+        setSelectedUsers([]);
       })
-      .catch(error => {
-        console.error('Error adding users to project:', error);
+      .catch((error) => {
+        console.error("Error adding users to project:", error);
       });
   };
 
+  // ✅ Moved return HERE (outside handleAddUsersToProject)
   return (
     <main className="h-screen w-screen flex bg-black text-white relative">
       {/* Sidebar */}
@@ -79,9 +116,11 @@ const Project = () => {
           <input
             type="text"
             placeholder="Enter message"
+            value={message}
+            onChange={(e) => setMessage(e.target.value)}
             className="flex-1 rounded-full px-4 py-2 bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-          <button className="ml-2 bg-blue-600 hover:bg-blue-500 p-2 rounded-full transition">
+          <button onClick={send} className="ml-2 bg-blue-600 hover:bg-blue-500 p-2 rounded-full transition">
             <i className="ri-send-plane-2-fill text-white"></i>
           </button>
         </div>
@@ -157,10 +196,10 @@ const Project = () => {
 
             <div className="mt-4 flex justify-end">
               <button
-                onClick={() => setIsModalOpen(false)}
+                onClick={handleAddUsersToProject} // ✅ fixed this
                 className="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded transition"
               >
-                Done
+                Add Users
               </button>
             </div>
           </div>
