@@ -63,7 +63,7 @@ io.on("connection",(socket)=>{
   socket.on("project_message", (data) => {
 
       console.log("Received project message:", data);
-    io.to(socket.project._id.toString()).emit("project_message", data);
+    socket.broadcast.to(socket.project._id.toString()).emit("project_message", data);
 
   });
   socket.on("event" , (data)=>{

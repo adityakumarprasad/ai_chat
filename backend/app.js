@@ -4,7 +4,9 @@ import userRoutes from './routes/user.routes.js';
 import projectRoutes from './routes/project.route.js';
 import dotenv from 'dotenv';
 dotenv.config();
+import aiRoutes from './routes/ai.routes.js';
 import cors from 'cors';
+
 
 import cookieParser from 'cookie-parser';
 import redisClient from './services/redis.service.js';
@@ -19,6 +21,7 @@ app.use(express.urlencoded({ extended: true }));
 app.use(cookieParser()); 
 app.use('/users', userRoutes);
 app.use('/projects', projectRoutes);
+app.use('/ai', aiRoutes);
 
 app.get('/', (req, res) => {
   res.send('API is running...');

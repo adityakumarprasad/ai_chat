@@ -1,50 +1,140 @@
 import React, { useState, useEffect } from "react";
 import axios from "../config.js/axios";
-import { data, useSearchParams } from "react-router-dom";
+import { useSearchParams } from "react-router-dom";
 import { initializeSocket, sendMessage, recieveMessage } from "../config.js/socket";
 import { useContext } from "react";
-
 import { UserContext } from "../context/user.context.jsx";
-
-
 
 const Project = () => {
   const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedUsers, setSelectedUsers] = useState([]);
-  const [message, setMessage] = useState([]);
+  const [messages, setMessages] = useState([]); // ✅ Changed to messages array
+  const [currentMessage, setCurrentMessage] = useState(""); // ✅ Separate input state
   const [users, setUsers] = useState([]);
   const [searchParams] = useSearchParams();
   const projectId = searchParams.get("id");
   const { user } = useContext(UserContext);
 
-
   console.log("Project ID from URL:", projectId);
-
+  console.log("Current user:", user);
 
   useEffect(() => {
+    if (!projectId || !user) {
+      console.log("Missing projectId or user, skipping socket initialization");
+      return;
+    }
+
+    console.log("Initializing socket for project:", projectId);
     initializeSocket(projectId);
+
+    // ✅ Listen for incoming messages
     recieveMessage("project_message", (data) => {
-      console.log("Received project message:", data);
+      console.log("📨 Received project message:", data);
+      setMessages((prev) => [...prev, {
+        text: data.text,
+        sender: data.sender,
+        senderEmail: data.senderEmail || "Unknown",
+        isOwn: false
+      }]);
     });
 
+    // Fetch all users
     axios
       .get("/users/all")
       .then((response) => {
         setUsers(response.data.users);
-        console.log(response.data.users);
+        console.log("Fetched users:", response.data.users);
       })
       .catch((error) => {
         console.error("Error fetching users:", error);
       });
-  }, [projectId, user._id]);
+
+    // Cleanup on unmount
+    return () => {
+      console.log("Cleaning up socket connection");
+    };
+  }, [projectId, user?._id]); // ✅ Optional chaining to prevent errors
 
   function send() {
-    sendMessage("project_message", { text: message, sender: user._id });
-    console.log(message)
-    setMessage("");
+    if (!currentMessage.trim()) {
+      console.log("Empty message, not sending");
+      return;
+    }
+
+    console.log("📤 Sending message:", currentMessage);
+
+    // Check if message is directed to AI
+    if (currentMessage.toLowerCase().includes("@ai")) {
+      // Extract the actual prompt (remove @ai mention)
+      const prompt = currentMessage.replace(/@ai/gi, "").trim();
+
+      // Send AI request
+      axios
+        .get("/ai/get-result", {
+          params: { prompt: prompt }
+        })
+        .then((response) => {
+          console.log("AI Response:", response.data);
+
+          // Add AI response to messages
+          setMessages((prev) => [
+            ...prev,
+            {
+              text: response.data.result,
+              sender: "AI",
+              senderEmail: "AI Assistant",
+              isOwn: false
+            }
+          ]);
+        })
+        .catch((error) => {
+          console.error("AI request failed:", error);
+          setMessages((prev) => [
+            ...prev,
+            {
+              text: "Sorry, I couldn't process that request.",
+              sender: "AI",
+              senderEmail: "AI Assistant",
+              isOwn: false
+            }
+          ]);
+        });
+
+      // Clear input
+      setCurrentMessage("");
+      return;
+    }
+
+    // Regular message (non-AI)
+    const messageData = {
+      text: currentMessage,
+      sender: user._id,
+      senderEmail: user.email
+    };
+
+    // Add to local messages immediately
+    setMessages((prev) => [
+      ...prev,
+      {
+        text: currentMessage,
+        sender: user._id,
+        senderEmail: user.email,
+        isOwn: true
+      }
+    ]);
+
+    sendMessage("project_message", messageData);
+    setCurrentMessage("");
   }
-  // Toggle user selection
+
+
+  const handleKeyPress = (e) => {
+    if (e.key === 'Enter') {
+      send();
+    }
+  };
+
   const handleSelectUser = (id) => {
     let newSelected;
     if (selectedUsers.includes(id)) {
@@ -74,7 +164,6 @@ const Project = () => {
       });
   };
 
-  // ✅ Moved return HERE (outside handleAddUsersToProject)
   return (
     <main className="h-screen w-screen flex bg-black text-white relative">
       {/* Sidebar */}
@@ -97,18 +186,26 @@ const Project = () => {
 
         {/* Messages */}
         <div className="flex-1 flex flex-col p-2 space-y-2 message_box overflow-y-auto">
-          <div className="incoming-message bg-gray-800 p-2 rounded w-3/4">
-            <small className="text-gray-400">example@.com</small>
-            <p className="mt-1">This is an incoming message.</p>
-          </div>
-          <div className="outcoming-message bg-blue-600 p-2 rounded w-3/4 ml-auto">
-            <small className="text-gray-200">example@.com</small>
-            <p className="mt-1">This is an outgoing message.</p>
-          </div>
-          <div className="incoming-message bg-gray-800 p-2 rounded w-3/4">
-            <small className="text-gray-400">example@.com</small>
-            <p className="mt-1">Another incoming message.</p>
-          </div>
+          {messages.length === 0 ? (
+            <div className="flex items-center justify-center h-full text-gray-500">
+              No messages yet. Start the conversation!
+            </div>
+          ) : (
+            messages.map((msg, index) => (
+              <div
+                key={index}
+                className={`p-2 rounded w-3/4 ${msg.isOwn
+                  ? "bg-blue-600 ml-auto"
+                  : "bg-gray-800"
+                  }`}
+              >
+                <small className={msg.isOwn ? "text-gray-200" : "text-gray-400"}>
+                  {msg.isOwn ? "You" : msg.senderEmail}
+                </small>
+                <p className="mt-1 break-words">{msg.text}</p>
+              </div>
+            ))
+          )}
         </div>
 
         {/* Input Area */}
@@ -116,11 +213,15 @@ const Project = () => {
           <input
             type="text"
             placeholder="Enter message"
-            value={message}
-            onChange={(e) => setMessage(e.target.value)}
+            value={currentMessage}
+            onChange={(e) => setCurrentMessage(e.target.value)}
+            onKeyUp={handleKeyPress}
             className="flex-1 rounded-full px-4 py-2 bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
           />
-          <button onClick={send} className="ml-2 bg-blue-600 hover:bg-blue-500 p-2 rounded-full transition">
+          <button
+            onClick={send}
+            className="ml-2 bg-blue-600 hover:bg-blue-500 p-2 rounded-full transition"
+          >
             <i className="ri-send-plane-2-fill text-white"></i>
           </button>
         </div>
@@ -141,18 +242,18 @@ const Project = () => {
         </div>
 
         <div className="users-list p-4 space-y-2">
-          {users.map((user) => (
+          {users.map((u) => (
             <div
-              key={user._id}
-              className={`flex items-center space-x-2 p-2 rounded cursor-pointer ${selectedUsers.includes(user._id)
+              key={u._id}
+              className={`flex items-center space-x-2 p-2 rounded cursor-pointer ${selectedUsers.includes(u._id)
                 ? "bg-blue-700"
                 : "bg-gray-700 hover:bg-blue-600"
                 }`}
-              onClick={() => handleSelectUser(user._id)}
+              onClick={() => handleSelectUser(u._id)}
             >
               <i className="ri-user-2-line text-white"></i>
-              <span className="text-white">{user.email}</span>
-              {selectedUsers.includes(user._id) && (
+              <span className="text-white">{u.email}</span>
+              {selectedUsers.includes(u._id) && (
                 <i className="ri-check-line text-white ml-auto"></i>
               )}
             </div>
@@ -177,17 +278,17 @@ const Project = () => {
             </div>
 
             <div className="space-y-2 overflow-y-auto max-h-64">
-              {users.map((user) => (
+              {users.map((u) => (
                 <div
-                  key={user._id}
-                  className={`flex items-center justify-between p-2 rounded cursor-pointer ${selectedUsers.includes(user._id)
+                  key={u._id}
+                  className={`flex items-center justify-between p-2 rounded cursor-pointer ${selectedUsers.includes(u._id)
                     ? "bg-blue-700"
                     : "bg-gray-700 hover:bg-blue-600"
                     }`}
-                  onClick={() => handleSelectUser(user._id)}
+                  onClick={() => handleSelectUser(u._id)}
                 >
-                  <span>{user.email}</span>
-                  {selectedUsers.includes(user._id) && (
+                  <span>{u.email}</span>
+                  {selectedUsers.includes(u._id) && (
                     <i className="ri-check-line text-white"></i>
                   )}
                 </div>
@@ -196,7 +297,7 @@ const Project = () => {
 
             <div className="mt-4 flex justify-end">
               <button
-                onClick={handleAddUsersToProject} // ✅ fixed this
+                onClick={handleAddUsersToProject}
                 className="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded transition"
               >
                 Add Users
