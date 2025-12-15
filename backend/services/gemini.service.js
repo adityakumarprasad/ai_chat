@@ -7,7 +7,7 @@ const ai = new GoogleGenAI({
 export async function generateContent(prompt) {
   try {
     const response = await ai.models.generateContent({
-      model: "gemini-2.5-flash",
+      model: "gemini-1.5-flash", 
       contents: [
         {
           role: "user",
@@ -27,7 +27,7 @@ export async function generateContent(prompt) {
       ],
     });
 
-    return response.text;
+    return response.text();
   } catch (error) {
     console.error("Gemini API Error:", error);
     throw new Error("Failed to generate response from Gemini API");

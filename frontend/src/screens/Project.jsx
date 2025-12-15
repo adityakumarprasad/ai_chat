@@ -9,9 +9,10 @@ const Project = () => {
   const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
   const [selectedUsers, setSelectedUsers] = useState([]);
-  const [messages, setMessages] = useState([]); // ✅ Changed to messages array
-  const [currentMessage, setCurrentMessage] = useState(""); // ✅ Separate input state
+  const [messages, setMessages] = useState([]);
+  const [currentMessage, setCurrentMessage] = useState("");
   const [users, setUsers] = useState([]);
+  const [isAiLoading, setIsAiLoading] = useState(false);
   const [searchParams] = useSearchParams();
   const projectId = searchParams.get("id");
   const { user } = useContext(UserContext);
@@ -28,7 +29,6 @@ const Project = () => {
     console.log("Initializing socket for project:", projectId);
     initializeSocket(projectId);
 
-    // ✅ Listen for incoming messages
     recieveMessage("project_message", (data) => {
       console.log("📨 Received project message:", data);
       setMessages((prev) => [...prev, {
@@ -39,7 +39,6 @@ const Project = () => {
       }]);
     });
 
-    // Fetch all users
     axios
       .get("/users/all")
       .then((response) => {
@@ -50,11 +49,10 @@ const Project = () => {
         console.error("Error fetching users:", error);
       });
 
-    // Cleanup on unmount
     return () => {
       console.log("Cleaning up socket connection");
     };
-  }, [projectId, user?._id]); // ✅ Optional chaining to prevent errors
+  }, [projectId, user?._id]);
 
   function send() {
     if (!currentMessage.trim()) {
@@ -69,6 +67,17 @@ const Project = () => {
       // Extract the actual prompt (remove @ai mention)
       const prompt = currentMessage.replace(/@ai/gi, "").trim();
 
+      // Add user's message to chat first
+      const userMessage = {
+        text: currentMessage,
+        sender: user._id,
+        senderEmail: user.email,
+        isOwn: true
+      };
+      setMessages((prev) => [...prev, userMessage]);
+      setCurrentMessage("");
+      setIsAiLoading(true);
+
       // Send AI request
       axios
         .get("/ai/get-result", {
@@ -77,32 +86,37 @@ const Project = () => {
         .then((response) => {
           console.log("AI Response:", response.data);
 
+          // ✅ FIX: Use response.data.response instead of response.data.result
+          const aiResponseText = response.data.response || "No response from AI";
+
           // Add AI response to messages
           setMessages((prev) => [
             ...prev,
             {
-              text: response.data.result,
+              text: aiResponseText,
               sender: "AI",
-              senderEmail: "AI Assistant",
-              isOwn: false
+              senderEmail: "🤖 AI Assistant",
+              isOwn: false,
+              isAi: true
             }
           ]);
+          setIsAiLoading(false);
         })
         .catch((error) => {
           console.error("AI request failed:", error);
           setMessages((prev) => [
             ...prev,
             {
-              text: "Sorry, I couldn't process that request.",
+              text: "Sorry, I couldn't process that request. Please try again.",
               sender: "AI",
-              senderEmail: "AI Assistant",
-              isOwn: false
+              senderEmail: "🤖 AI Assistant",
+              isOwn: false,
+              isAi: true
             }
           ]);
+          setIsAiLoading(false);
         });
 
-      // Clear input
-      setCurrentMessage("");
       return;
     }
 
@@ -127,7 +141,6 @@ const Project = () => {
     sendMessage("project_message", messageData);
     setCurrentMessage("");
   }
-
 
   const handleKeyPress = (e) => {
     if (e.key === 'Enter') {
@@ -188,23 +201,34 @@ const Project = () => {
         <div className="flex-1 flex flex-col p-2 space-y-2 message_box overflow-y-auto">
           {messages.length === 0 ? (
             <div className="flex items-center justify-center h-full text-gray-500">
-              No messages yet. Start the conversation!
+              <div className="text-center">
+                <p className="mb-2">No messages yet. Start the conversation!</p>
+                <p className="text-sm text-gray-600">Tip: Use @ai to chat with AI assistant</p>
+              </div>
             </div>
           ) : (
             messages.map((msg, index) => (
               <div
                 key={index}
                 className={`p-2 rounded w-3/4 ${msg.isOwn
-                  ? "bg-blue-600 ml-auto"
-                  : "bg-gray-800"
+                    ? "bg-blue-600 ml-auto"
+                    : msg.isAi
+                      ? "bg-purple-700"
+                      : "bg-gray-800"
                   }`}
               >
                 <small className={msg.isOwn ? "text-gray-200" : "text-gray-400"}>
                   {msg.isOwn ? "You" : msg.senderEmail}
                 </small>
-                <p className="mt-1 break-words">{msg.text}</p>
+                <p className="mt-1 break-words whitespace-pre-wrap">{msg.text}</p>
               </div>
             ))
+          )}
+          {isAiLoading && (
+            <div className="p-2 rounded w-3/4 bg-purple-700">
+              <small className="text-gray-400">🤖 AI Assistant</small>
+              <p className="mt-1">Thinking...</p>
+            </div>
           )}
         </div>
 
@@ -212,15 +236,17 @@ const Project = () => {
         <div className="flex items-center p-2 border-t border-gray-700 bg-gray-800 input_area">
           <input
             type="text"
-            placeholder="Enter message"
+            placeholder="Enter message (use @ai for AI)"
             value={currentMessage}
             onChange={(e) => setCurrentMessage(e.target.value)}
             onKeyUp={handleKeyPress}
             className="flex-1 rounded-full px-4 py-2 bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
+            disabled={isAiLoading}
           />
           <button
             onClick={send}
-            className="ml-2 bg-blue-600 hover:bg-blue-500 p-2 rounded-full transition"
+            disabled={isAiLoading}
+            className="ml-2 bg-blue-600 hover:bg-blue-500 p-2 rounded-full transition disabled:opacity-50 disabled:cursor-not-allowed"
           >
             <i className="ri-send-plane-2-fill text-white"></i>
           </button>
@@ -246,8 +272,8 @@ const Project = () => {
             <div
               key={u._id}
               className={`flex items-center space-x-2 p-2 rounded cursor-pointer ${selectedUsers.includes(u._id)
-                ? "bg-blue-700"
-                : "bg-gray-700 hover:bg-blue-600"
+                  ? "bg-blue-700"
+                  : "bg-gray-700 hover:bg-blue-600"
                 }`}
               onClick={() => handleSelectUser(u._id)}
             >
@@ -282,8 +308,8 @@ const Project = () => {
                 <div
                   key={u._id}
                   className={`flex items-center justify-between p-2 rounded cursor-pointer ${selectedUsers.includes(u._id)
-                    ? "bg-blue-700"
-                    : "bg-gray-700 hover:bg-blue-600"
+                      ? "bg-blue-700"
+                      : "bg-gray-700 hover:bg-blue-600"
                     }`}
                   onClick={() => handleSelectUser(u._id)}
                 >
