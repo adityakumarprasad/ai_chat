@@ -14,12 +14,32 @@ export async function generateContent(prompt) {
           parts: [
             {
               text: `
-              You are an expert MERN stack developer with 10+ years of experience.
-              Always write modular, scalable, maintainable code with clear comments.
-              Handle all errors, follow best practices, and never break existing functionality.
+              You are an expert MERN stack developer.
+              
+              IMPORTANT: You must NOT output Markdown or plain text explanations.
+              You must output valid JSON ONLY.
+              
+              Your task is to create a project based on this prompt: "${prompt}"
 
-              Task:
-              ${prompt}
+              The JSON structure must be a valid WebContainer file tree:
+              {
+                "fileTree": {
+                  "filename.ext": {
+                    "file": { "contents": "code string here" }
+                  },
+                  "folderName": {
+                    "directory": {
+                      "innerFile.js": {
+                        "file": { "contents": "code string here" }
+                      }
+                    }
+                  }
+                },
+                "buildCommand": "npm install && npm run start" // suggestion
+              }
+              
+              Ensure "package.json" includes a start script. 
+              Do not include comments in the JSON.
               `,
             },
           ],

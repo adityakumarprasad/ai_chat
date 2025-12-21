@@ -7,6 +7,7 @@ import { UserContext } from "../context/user.context.jsx";
 import Markdown from 'react-markdown'
 import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
 import { dracula } from 'react-syntax-highlighter/dist/esm/styles/prism'
+import { WebContainer } from '@webcontainer/api';
 
 
 const Project = () => {
@@ -21,8 +22,25 @@ const Project = () => {
   const projectId = searchParams.get("id");
   const { user } = useContext(UserContext);
 
+
+  //right panel - webcontainer states
+  const [webContainer, setWebContainer] = useState(null);
+  const [iframeUrl, setIframeUrl] = useState("");
+  const [shellProcess, setShellProcess] = useState(null);
+
   console.log("Project ID from URL:", projectId);
   console.log("Current user:", user);
+
+
+  // webcontainer boot effect
+  useEffect(() => {
+    // Call this only once!
+    async function boot() {
+      const instance = await WebContainer.boot();
+      setWebContainer(instance);
+    }
+    boot();
+  }, []);
 
   useEffect(() => {
     if (!projectId || !user) {
@@ -87,11 +105,42 @@ const Project = () => {
         .get("/ai/get-result", {
           params: { prompt: prompt }
         })
-        .then((response) => {
-          console.log("AI Response:", response.data);
+        .then(async (response) => {
 
-          // ✅ FIX: Use response.data.response instead of response.data.result
-          const aiResponseText = response.data.response || "No response from AI";
+          try {
+            // 1. Parse the JSON response from the AI
+            const aiResponse = JSON.parse(response.data.response);
+
+            const fileTree = aiResponse.fileTree;
+            ``
+            if (webContainer) {
+              await webContainer.mount(fileTree);
+
+              const installProcess = await webContainer.spawn('npm', ['install']);
+
+              // You can stream the output to an xterm terminal here if you want
+              installProcess.output.pipeTo(new WritableStream({
+                write(data) {
+                  console.log(data); // Or write to xterm
+                }
+              }));
+
+              await installProcess.exit;
+
+              // 3. Start the dev server
+              const startProcess = await webContainer.spawn('npm', ['start']);
+
+              // 4. Listen for the "server-ready" event to get the preview URL
+              webContainer.on('server-ready', (port, url) => {
+                console.log("Server ready at:", url);
+                setIframeUrl(url); // Set this URL to your iframe
+              });
+
+            }
+          }
+          catch (error) {
+            console.error("Failed to parse AI file tree:", error);
+          }
 
           // Add AI response to messages
           setMessages((prev) => [
@@ -364,6 +413,18 @@ const Project = () => {
           </div>
         </div>
       )}
+
+      {/* Right Panel - WebContainer Preview */}
+      <section className="w-1/2 flex flex-col bg-gray-900">
+        {iframeUrl && (
+          <iframe
+            src={iframeUrl}
+            className="w-full h-full border-none"
+            title="Preview"
+          />
+        )}
+        {!iframeUrl && <div className="text-center mt-20">Waiting for AI to build...</div>}
+      </section>
     </main>
   );
 };
