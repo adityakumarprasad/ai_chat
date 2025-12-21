@@ -4,6 +4,10 @@ import { useSearchParams } from "react-router-dom";
 import { initializeSocket, sendMessage, recieveMessage } from "../config.js/socket";
 import { useContext } from "react";
 import { UserContext } from "../context/user.context.jsx";
+import Markdown from 'react-markdown'
+import { Prism as SyntaxHighlighter } from 'react-syntax-highlighter'
+import { dracula } from 'react-syntax-highlighter/dist/esm/styles/prism'
+
 
 const Project = () => {
   const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
@@ -211,16 +215,44 @@ const Project = () => {
               <div
                 key={index}
                 className={`p-2 rounded w-3/4 ${msg.isOwn
-                    ? "bg-blue-600 ml-auto"
-                    : msg.isAi
-                      ? "bg-purple-700"
-                      : "bg-gray-800"
+                  ? "bg-blue-600 ml-auto"
+                  : msg.isAi
+                    ? "bg-purple-700"
+                    : "bg-gray-800"
                   }`}
               >
                 <small className={msg.isOwn ? "text-gray-200" : "text-gray-400"}>
                   {msg.isOwn ? "You" : msg.senderEmail}
                 </small>
-                <p className="mt-1 break-words whitespace-pre-wrap">{msg.text}</p>
+                {msg.isAi ? (
+                  <div className="overflow-x-auto bg-slate-950 p-2 rounded-md">
+                    <Markdown
+                      children={msg.text}
+                      components={{
+                        code(props) {
+                          const { children, className, node, ...rest } = props
+                          const match = /language-(\w+)/.exec(className || '')
+                          return match ? (
+                            <SyntaxHighlighter
+                              {...rest}
+                              PreTag="div"
+                              children={String(children).replace(/\n$/, '')}
+                              language={match[1]}
+                              style={dracula}
+                              wrapLongLines={true}
+                            />
+                          ) : (
+                            <code {...rest} className={`${className} bg-slate-700 px-1 rounded`}>
+                              {children}
+                            </code>
+                          )
+                        }
+                      }}
+                    />
+                  </div>
+                ) : (
+                  <p className="mt-1 break-words whitespace-pre-wrap">{msg.text}</p>
+                )}
               </div>
             ))
           )}
@@ -272,8 +304,8 @@ const Project = () => {
             <div
               key={u._id}
               className={`flex items-center space-x-2 p-2 rounded cursor-pointer ${selectedUsers.includes(u._id)
-                  ? "bg-blue-700"
-                  : "bg-gray-700 hover:bg-blue-600"
+                ? "bg-blue-700"
+                : "bg-gray-700 hover:bg-blue-600"
                 }`}
               onClick={() => handleSelectUser(u._id)}
             >
@@ -308,8 +340,8 @@ const Project = () => {
                 <div
                   key={u._id}
                   className={`flex items-center justify-between p-2 rounded cursor-pointer ${selectedUsers.includes(u._id)
-                      ? "bg-blue-700"
-                      : "bg-gray-700 hover:bg-blue-600"
+                    ? "bg-blue-700"
+                    : "bg-gray-700 hover:bg-blue-600"
                     }`}
                   onClick={() => handleSelectUser(u._id)}
                 >
