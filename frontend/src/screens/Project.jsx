@@ -76,6 +76,16 @@ const Project = () => {
     };
   }, [projectId, user?._id]);
 
+  // Add this helper function outside of the component (or just above the send function)
+  function isValidJson(jsonString) {
+    try {
+      JSON.parse(jsonString);
+      return true;
+    } catch (e) {
+      return false;
+    }
+  }
+
   function send() {
     if (!currentMessage.trim()) {
       console.log("Empty message, not sending");
@@ -84,12 +94,11 @@ const Project = () => {
 
     console.log("📤 Sending message:", currentMessage);
 
-    // Check if message is directed to AI
+    // 1. Handle AI Messages
     if (currentMessage.toLowerCase().includes("@ai")) {
-      // Extract the actual prompt (remove @ai mention)
       const prompt = currentMessage.replace(/@ai/gi, "").trim();
 
-      // Add user's message to chat first
+      // Add user message to UI
       const userMessage = {
         text: currentMessage,
         sender: user._id,
@@ -100,59 +109,82 @@ const Project = () => {
       setCurrentMessage("");
       setIsAiLoading(true);
 
-      // Send AI request
       axios
         .get("/ai/get-result", {
           params: { prompt: prompt }
         })
         .then(async (response) => {
+          // The raw string from the AI
+          let aiMessage = response.data.response;
+
+          // CLEANUP: AI often wraps JSON in markdown blocks (e.g. ```json ... ```)
+          // We strip these out to ensure we can parse the JSON
+          const cleanJson = aiMessage.replace(/```json/g, "").replace(/```/g, "").trim();
 
           try {
-            // 1. Parse the JSON response from the AI
-            const aiResponse = JSON.parse(response.data.response);
+            // CHECK: Is this a file tree (JSON) or a regular chat message?
+            if (isValidJson(cleanJson)) {
+              const aiResponse = JSON.parse(cleanJson);
+              const fileTree = aiResponse.fileTree;
 
-            const fileTree = aiResponse.fileTree;
-            ``
-            if (webContainer) {
-              await webContainer.mount(fileTree);
+              // A. Mount files to WebContainer
+              if (webContainer) {
+                await webContainer.mount(fileTree);
+                console.log("📂 Files mounted!");
 
-              const installProcess = await webContainer.spawn('npm', ['install']);
+                // Install dependencies
+                const installProcess = await webContainer.spawn('npm', ['install']);
+                installProcess.output.pipeTo(new WritableStream({
+                  write(data) { console.log("[npm install]:", data); }
+                }));
+                await installProcess.exit;
 
-              // You can stream the output to an xterm terminal here if you want
-              installProcess.output.pipeTo(new WritableStream({
-                write(data) {
-                  console.log(data); // Or write to xterm
+                // Start the server
+                const startProcess = await webContainer.spawn('npm', ['start']);
+                webContainer.on('server-ready', (port, url) => {
+                  console.log("🚀 Server ready at:", url);
+                  setIframeUrl(url);
+                });
+              }
+
+              // B. Show "Success" message in chat (instead of raw JSON)
+              setMessages((prev) => [
+                ...prev,
+                {
+                  text: "The project has been generated and mounted. Check the preview panel!",
+                  sender: "AI",
+                  senderEmail: "🤖 AI Assistant",
+                  isOwn: false,
+                  isAi: true
                 }
-              }));
-
-              await installProcess.exit;
-
-              // 3. Start the dev server
-              const startProcess = await webContainer.spawn('npm', ['start']);
-
-              // 4. Listen for the "server-ready" event to get the preview URL
-              webContainer.on('server-ready', (port, url) => {
-                console.log("Server ready at:", url);
-                setIframeUrl(url); // Set this URL to your iframe
-              });
-
+              ]);
+            } else {
+              // C. It's just a regular text message from AI
+              setMessages((prev) => [
+                ...prev,
+                {
+                  text: aiMessage,
+                  sender: "AI",
+                  senderEmail: "🤖 AI Assistant",
+                  isOwn: false,
+                  isAi: true
+                }
+              ]);
             }
-          }
-          catch (error) {
-            console.error("Failed to parse AI file tree:", error);
+          } catch (error) {
+            console.error("Error processing AI response:", error);
+            setMessages((prev) => [
+              ...prev,
+              {
+                text: "Something went wrong parsing the AI response.",
+                sender: "AI",
+                senderEmail: "🤖 AI Assistant",
+                isOwn: false,
+                isAi: true
+              }
+            ]);
           }
 
-          // Add AI response to messages
-          setMessages((prev) => [
-            ...prev,
-            {
-              text: aiResponseText,
-              sender: "AI",
-              senderEmail: "🤖 AI Assistant",
-              isOwn: false,
-              isAi: true
-            }
-          ]);
           setIsAiLoading(false);
         })
         .catch((error) => {
@@ -173,14 +205,13 @@ const Project = () => {
       return;
     }
 
-    // Regular message (non-AI)
+    // 2. Handle Regular Messages (Non-AI)
     const messageData = {
       text: currentMessage,
       sender: user._id,
       senderEmail: user.email
     };
 
-    // Add to local messages immediately
     setMessages((prev) => [
       ...prev,
       {
@@ -194,7 +225,6 @@ const Project = () => {
     sendMessage("project_message", messageData);
     setCurrentMessage("");
   }
-
   const handleKeyPress = (e) => {
     if (e.key === 'Enter') {
       send();
