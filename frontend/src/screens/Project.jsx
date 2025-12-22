@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import axios from "../config.js/axios";
 import { useSearchParams } from "react-router-dom";
 import { initializeSocket, sendMessage, recieveMessage } from "../config.js/socket";
@@ -13,20 +13,27 @@ import { WebContainer } from '@webcontainer/api';
 const Project = () => {
   const [isSidePanelOpen, setIsSidePanelOpen] = useState(false);
   const [isModalOpen, setIsModalOpen] = useState(false);
+  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [isRunning, setIsRunning] = useState(false);
+
+  // Data States
   const [selectedUsers, setSelectedUsers] = useState([]);
   const [messages, setMessages] = useState([]);
   const [currentMessage, setCurrentMessage] = useState("");
   const [users, setUsers] = useState([]);
-  const [isAiLoading, setIsAiLoading] = useState(false);
+  const [fileTree, setFileTree] = useState({}); // New State for File Tree
+  const [currentFile, setCurrentFile] = useState(null);
+
+  // WebContainer States
+  const [webContainer, setWebContainer] = useState(null);
+  const [iframeUrl, setIframeUrl] = useState("");
+  const [runProcess, setRunProcess] = useState(null);
+
+  // Context & Params
   const [searchParams] = useSearchParams();
   const projectId = searchParams.get("id");
   const { user } = useContext(UserContext);
-
-
-  //right panel - webcontainer states
-  const [webContainer, setWebContainer] = useState(null);
-  const [iframeUrl, setIframeUrl] = useState("");
-  const [shellProcess, setShellProcess] = useState(null);
+  const messageBoxRef = useRef(null);
 
   console.log("Project ID from URL:", projectId);
   console.log("Current user:", user);
@@ -76,387 +83,425 @@ const Project = () => {
     };
   }, [projectId, user?._id]);
 
-  // Add this helper function outside of the component (or just above the send function)
-  function isValidJson(jsonString) {
-    try {
-      JSON.parse(jsonString);
-      return true;
-    } catch (e) {
-      return false;
+  function scrollToBottom() {
+    if (messageBoxRef.current) {
+      messageBoxRef.current.scrollTop = messageBoxRef.current.scrollHeight;
     }
   }
 
-  function send() {
-    if (!currentMessage.trim()) {
-      console.log("Empty message, not sending");
-      return;
+
+  // ---------------- COLLABORATION HANDLERS ----------------
+    const handleSelectUser = (id) => {
+        setSelectedUsers(prev => 
+            prev.includes(id) ? prev.filter(uid => uid !== id) : [...prev, id]
+        );
+    };
+
+    const handleAddUsersToProject = () => {
+        if (!projectId) return;
+
+        axios.put("/projects/add-user", { projectId, users: selectedUsers })
+            .then((response) => {
+                setIsModalOpen(false);
+                setSelectedUsers([]);
+            })
+            .catch((error) => {
+                console.error("Error adding users:", error);
+            });
+    };
+
+    
+  // Add this helper function outside of the component (or just above the send function)
+  // function isValidJson(jsonString) {
+  //   try {
+  //     JSON.parse(jsonString);
+  //     return true;
+  //   } catch (e) {
+  //     return false;
+  //   }
+  // }
+
+  // Robust JSON extractor that handles Markdown, text wrappers, and mixed content
+function extractJson(str) {
+    try {
+        // 1. Try detecting markdown blocks first (most common)
+        const match = str.match(/```json([\s\S]*?)```/);
+        if (match && match[1]) {
+            return JSON.parse(match[1].trim());
+        }
+
+        // 2. Fallback: Find the first '{' and last '}' (handles "Here is your code: { ... }")
+        const firstOpen = str.indexOf("{");
+        const lastClose = str.lastIndexOf("}");
+        
+        if (firstOpen !== -1 && lastClose !== -1) {
+             const candidate = str.substring(firstOpen, lastClose + 1);
+             return JSON.parse(candidate);
+        }
+        
+        // 3. Last resort: Try parsing the whole string directly
+        return JSON.parse(str);
+    } catch (e) {
+        return null; // Invalid JSON
     }
+}
 
-    console.log("📤 Sending message:", currentMessage);
+  function send() {
+    if (!currentMessage.trim()) return;
 
-    // 1. Handle AI Messages
-    if (currentMessage.toLowerCase().includes("@ai")) {
-      const prompt = currentMessage.replace(/@ai/gi, "").trim();
+    // Add User Message
+    const newMessage = {
+      text: currentMessage,
+      sender: user._id,
+      senderEmail: user.email,
+      isOwn: true
+    };
 
-      // Add user message to UI
-      const userMessage = {
-        text: currentMessage,
-        sender: user._id,
-        senderEmail: user.email,
-        isOwn: true
-      };
-      setMessages((prev) => [...prev, userMessage]);
-      setCurrentMessage("");
+    // Optimistic UI update
+    setMessages((prev) => [...prev, newMessage]);
+    setCurrentMessage("");
+    scrollToBottom();
+
+    // Check for AI Trigger
+    if (newMessage.text.toLowerCase().includes("@ai")) {
       setIsAiLoading(true);
+      const prompt = newMessage.text.replace(/@ai/gi, "").trim();
 
-      axios
-        .get("/ai/get-result", {
-          params: { prompt: prompt }
-        })
+      axios.get("/ai/get-result", { params: { prompt } })
         .then(async (response) => {
-          // The raw string from the AI
-          let aiMessage = response.data.response;
+          const aiData = response.data.response;
+          // const cleanJson = aiData.replace(/```json/g, "").replace(/```/g, "").trim();
 
-          // CLEANUP: AI often wraps JSON in markdown blocks (e.g. ```json ... ```)
-          // We strip these out to ensure we can parse the JSON
-          const cleanJson = aiMessage.replace(/```json/g, "").replace(/```/g, "").trim();
+          // if (isValidJson(cleanJson)) {
+          //   const parsedData = JSON.parse(cleanJson);
 
-          try {
-            // CHECK: Is this a file tree (JSON) or a regular chat message?
-            if (isValidJson(cleanJson)) {
-              const aiResponse = JSON.parse(cleanJson);
-              const fileTree = aiResponse.fileTree;
+          //   // 1. Update File Tree State
+          //   setFileTree(parsedData.fileTree);
 
-              // A. Mount files to WebContainer
-              if (webContainer) {
-                await webContainer.mount(fileTree);
-                console.log("📂 Files mounted!");
+          // 🛑 NEW: Use the robust extractor
+                const parsedData = extractJson(aiData);
 
-                // Install dependencies
-                const installProcess = await webContainer.spawn('npm', ['install']);
-                installProcess.output.pipeTo(new WritableStream({
-                  write(data) { console.log("[npm install]:", data); }
-                }));
-                await installProcess.exit;
+                if (parsedData) {
+                    // ✅ SUCCESS: It is a valid Project JSON
+                    
+                    // 1. Update File Tree for UI
+                    if (parsedData.fileTree) {
+                        setFileTree(parsedData.fileTree);
+                    }
 
-                // Start the server
-                const startProcess = await webContainer.spawn('npm', ['start']);
-                webContainer.on('server-ready', (port, url) => {
-                  console.log("🚀 Server ready at:", url);
-                  setIframeUrl(url);
-                });
-              }
-
-              // B. Show "Success" message in chat (instead of raw JSON)
-              setMessages((prev) => [
-                ...prev,
-                {
-                  text: "The project has been generated and mounted. Check the preview panel!",
-                  sender: "AI",
-                  senderEmail: "🤖 AI Assistant",
-                  isOwn: false,
-                  isAi: true
-                }
-              ]);
-            } else {
-              // C. It's just a regular text message from AI
-              setMessages((prev) => [
-                ...prev,
-                {
-                  text: aiMessage,
-                  sender: "AI",
-                  senderEmail: "🤖 AI Assistant",
-                  isOwn: false,
-                  isAi: true
-                }
-              ]);
+            // 2. Mount Files (But DO NOT Run yet)
+            if (webContainer && parsedData.fileTree) {
+              await webContainer.mount(parsedData.fileTree);
+              console.log("Files mounted to WebContainer");
             }
-          } catch (error) {
-            console.error("Error processing AI response:", error);
-            setMessages((prev) => [
-              ...prev,
-              {
-                text: "Something went wrong parsing the AI response.",
-                sender: "AI",
-                senderEmail: "🤖 AI Assistant",
-                isOwn: false,
-                isAi: true
-              }
-            ]);
-          }
-
-          setIsAiLoading(false);
-        })
-        .catch((error) => {
-          console.error("AI request failed:", error);
-          setMessages((prev) => [
-            ...prev,
-            {
-              text: "Sorry, I couldn't process that request. Please try again.",
+          } else {
+            // Regular text response
+            setMessages(prev => [...prev, {
+              text: aiData,
               sender: "AI",
               senderEmail: "🤖 AI Assistant",
               isOwn: false,
               isAi: true
-            }
-          ]);
-          setIsAiLoading(false);
+            }]);
+          }
+        })
+        .catch(err => {
+          console.error(err);
+          setMessages(prev => [...prev, {
+            text: "Error communicating with AI.",
+            sender: "AI",
+            senderEmail: "🤖 AI Assistant",
+            isOwn: false,
+            isAi: true
+          }]);
+        })
+        .finally(() => {
+          setIsAiLoading(false); // ALWAYS Reset loading state
         });
-
-      return;
+    } else {
+      sendMessage("project_message", newMessage);
     }
-
-    // 2. Handle Regular Messages (Non-AI)
-    const messageData = {
-      text: currentMessage,
-      sender: user._id,
-      senderEmail: user.email
-    };
-
-    setMessages((prev) => [
-      ...prev,
-      {
-        text: currentMessage,
-        sender: user._id,
-        senderEmail: user.email,
-        isOwn: true
-      }
-    ]);
-
-    sendMessage("project_message", messageData);
-    setCurrentMessage("");
   }
+
+  async function runProject() {
+        if (!webContainer) return;
+
+        setIsRunning(true);
+        setIframeUrl(""); // Reset preview while loading
+
+        // Kill previous process
+        if (runProcess) {
+            runProcess.kill();
+        }
+
+        const terminalOutput = (data) => console.log("[Terminal]:", data);
+
+        try {
+            // 1. Install Dependencies
+            const installProcess = await webContainer.spawn('npm', ['install']);
+            installProcess.output.pipeTo(new WritableStream({ write: terminalOutput }));
+            await installProcess.exit;
+
+            // 2. Start Dev Server
+            const startProcess = await webContainer.spawn('npm', ['start']);
+            startProcess.output.pipeTo(new WritableStream({ write: terminalOutput }));
+            setRunProcess(startProcess);
+
+            // 3. Listen for server-ready
+            webContainer.on('server-ready', (port, url) => {
+                console.log("Server ready at:", url);
+                setIframeUrl(url);
+                setIsRunning(false); 
+            });
+
+        } catch (error) {
+            console.error("Error running project:", error);
+            setIsRunning(false);
+        }
+    }
+  
+
+
+  // Helper to Validate JSON
+  function isValidJson(jsonString) {
+    try { JSON.parse(jsonString); return true; }
+    catch (e) { return false; }
+  }
+
+  const handleFileClick = (fileName, content) => {
+    setCurrentFile({ name: fileName, content: content });
+  };
+
+  const renderFileTree = (tree, path = "") => {
+    return Object.keys(tree).map((fileName) => {
+      const node = tree[fileName];
+      const currentPath = path ? `${path}/${fileName}` : fileName;
+
+      if (node.directory) {
+        return (
+          <div key={currentPath} className="pl-4">
+            <div className="flex items-center gap-2 text-gray-400 font-medium">
+              <i className="ri-folder-line text-yellow-500"></i>
+              <span>{fileName}</span>
+            </div>
+            {renderFileTree(node.directory, currentPath)}
+          </div>
+        );
+      } else {
+        // It's a file
+        return (
+          <div
+            key={currentPath}
+            onClick={() => handleFileClick(fileName, node.file.contents)}
+            className="pl-6 flex items-center gap-2 cursor-pointer text-gray-300 hover:text-blue-400 hover:bg-gray-800 transition rounded-sm"
+          >
+            <i className="ri-file-code-line text-blue-400"></i>
+            <span>{fileName}</span>
+          </div>
+        );
+      }
+    });
+  };
+
   const handleKeyPress = (e) => {
     if (e.key === 'Enter') {
       send();
     }
   };
 
-  const handleSelectUser = (id) => {
-    let newSelected;
-    if (selectedUsers.includes(id)) {
-      newSelected = selectedUsers.filter((uid) => uid !== id);
-    } else {
-      newSelected = [...selectedUsers, id];
-    }
-    setSelectedUsers(newSelected);
-    console.log("Selected Users:", newSelected);
-  };
 
-  const handleAddUsersToProject = () => {
-    if (!projectId) {
-      console.error("Project ID is missing. Cannot add users to project.");
-      return;
-    }
 
-    axios
-      .put("/projects/add-user", { projectId: projectId, users: selectedUsers })
-      .then((response) => {
-        console.log("Users added to project:", response.data);
-        setIsModalOpen(false);
-        setSelectedUsers([]);
-      })
-      .catch((error) => {
-        console.error("Error adding users to project:", error);
-      });
-  };
-
-  return (
-    <main className="h-screen w-screen flex bg-black text-white relative">
-      {/* Sidebar */}
-      <section className="w-1/4 flex flex-col bg-gray-900 relative z-10">
-        {/* Header */}
-        <header className="flex justify-between items-center p-4 bg-gray-800 border-b border-gray-700">
-          <button
-            onClick={() => setIsModalOpen(true)}
-            className="text-blue-400 hover:text-blue-300 transition"
-          >
-            <i className="ri-add-large-fill"></i> Add Collaborators
-          </button>
-          <button
-            onClick={() => setIsSidePanelOpen(!isSidePanelOpen)}
-            className="text-blue-400 hover:text-blue-300 transition"
-          >
-            <i className="ri-team-line text-2xl"></i>
-          </button>
-        </header>
-
-        {/* Messages */}
-        <div className="flex-1 flex flex-col p-2 space-y-2 message_box overflow-y-auto">
-          {messages.length === 0 ? (
-            <div className="flex items-center justify-center h-full text-gray-500">
-              <div className="text-center">
-                <p className="mb-2">No messages yet. Start the conversation!</p>
-                <p className="text-sm text-gray-600">Tip: Use @ai to chat with AI assistant</p>
-              </div>
-            </div>
-          ) : (
-            messages.map((msg, index) => (
-              <div
-                key={index}
-                className={`p-2 rounded w-3/4 ${msg.isOwn
-                  ? "bg-blue-600 ml-auto"
-                  : msg.isAi
-                    ? "bg-purple-700"
-                    : "bg-gray-800"
-                  }`}
-              >
-                <small className={msg.isOwn ? "text-gray-200" : "text-gray-400"}>
-                  {msg.isOwn ? "You" : msg.senderEmail}
-                </small>
-                {msg.isAi ? (
-                  <div className="overflow-x-auto bg-slate-950 p-2 rounded-md">
-                    <Markdown
-                      children={msg.text}
-                      components={{
-                        code(props) {
-                          const { children, className, node, ...rest } = props
-                          const match = /language-(\w+)/.exec(className || '')
-                          return match ? (
-                            <SyntaxHighlighter
-                              {...rest}
-                              PreTag="div"
-                              children={String(children).replace(/\n$/, '')}
-                              language={match[1]}
-                              style={dracula}
-                              wrapLongLines={true}
-                            />
-                          ) : (
-                            <code {...rest} className={`${className} bg-slate-700 px-1 rounded`}>
-                              {children}
-                            </code>
-                          )
-                        }
-                      }}
-                    />
-                  </div>
-                ) : (
-                  <p className="mt-1 break-words whitespace-pre-wrap">{msg.text}</p>
-                )}
-              </div>
-            ))
-          )}
-          {isAiLoading && (
-            <div className="p-2 rounded w-3/4 bg-purple-700">
-              <small className="text-gray-400">🤖 AI Assistant</small>
-              <p className="mt-1">Thinking...</p>
-            </div>
-          )}
-        </div>
-
-        {/* Input Area */}
-        <div className="flex items-center p-2 border-t border-gray-700 bg-gray-800 input_area">
-          <input
-            type="text"
-            placeholder="Enter message (use @ai for AI)"
-            value={currentMessage}
-            onChange={(e) => setCurrentMessage(e.target.value)}
-            onKeyUp={handleKeyPress}
-            className="flex-1 rounded-full px-4 py-2 bg-gray-700 text-white focus:outline-none focus:ring-2 focus:ring-blue-500"
-            disabled={isAiLoading}
-          />
-          <button
-            onClick={send}
-            disabled={isAiLoading}
-            className="ml-2 bg-blue-600 hover:bg-blue-500 p-2 rounded-full transition disabled:opacity-50 disabled:cursor-not-allowed"
-          >
-            <i className="ri-send-plane-2-fill text-white"></i>
-          </button>
-        </div>
-      </section>
-
-      {/* Sliding Side Panel */}
-      <div
-        className={`fixed top-0 left-0 h-full w-64 bg-gray-800 transform transition-transform duration-300 z-20 ${isSidePanelOpen ? "translate-x-0" : "-translate-x-full"
-          }`}
-      >
-        <div className="flex justify-end p-4 border-b border-gray-700">
-          <button
-            onClick={() => setIsSidePanelOpen(false)}
-            className="text-white hover:text-blue-400 transition"
-          >
-            <i className="ri-close-line text-2xl"></i>
-          </button>
-        </div>
-
-        <div className="users-list p-4 space-y-2">
-          {users.map((u) => (
-            <div
-              key={u._id}
-              className={`flex items-center space-x-2 p-2 rounded cursor-pointer ${selectedUsers.includes(u._id)
-                ? "bg-blue-700"
-                : "bg-gray-700 hover:bg-blue-600"
-                }`}
-              onClick={() => handleSelectUser(u._id)}
-            >
-              <i className="ri-user-2-line text-white"></i>
-              <span className="text-white">{u.email}</span>
-              {selectedUsers.includes(u._id) && (
-                <i className="ri-check-line text-white ml-auto"></i>
-              )}
-            </div>
-          ))}
-        </div>
-      </div>
-
-      {/* Modal for Adding Collaborators */}
-      {isModalOpen && (
-        <div className="fixed inset-0 bg-black bg-opacity-70 flex items-center justify-center z-30">
-          <div className="bg-gray-900 rounded-lg w-96 p-6 overflow-hidden">
-            <div className="flex justify-between items-center mb-4">
-              <h2 className="text-xl font-semibold text-blue-400">
-                Add Collaborators
-              </h2>
-              <button
-                onClick={() => setIsModalOpen(false)}
-                className="text-white hover:text-blue-400 transition"
-              >
-                <i className="ri-close-line text-2xl"></i>
-              </button>
-            </div>
-
-            <div className="space-y-2 overflow-y-auto max-h-64">
-              {users.map((u) => (
-                <div
-                  key={u._id}
-                  className={`flex items-center justify-between p-2 rounded cursor-pointer ${selectedUsers.includes(u._id)
-                    ? "bg-blue-700"
-                    : "bg-gray-700 hover:bg-blue-600"
-                    }`}
-                  onClick={() => handleSelectUser(u._id)}
-                >
-                  <span>{u.email}</span>
-                  {selectedUsers.includes(u._id) && (
-                    <i className="ri-check-line text-white"></i>
-                  )}
+return (
+        <main className="h-screen w-screen flex bg-black text-white relative">
+            
+            {/* 1. CHAT SECTION (Left - 25%) */}
+            <section className="w-1/4 flex flex-col bg-gray-900 border-r border-gray-800 relative z-10">
+                <header className="p-4 bg-gray-800 border-b border-gray-700 flex justify-between items-center">
+                    <button onClick={() => setIsModalOpen(true)} className="text-blue-400 hover:text-blue-300">
+                        <i className="ri-add-large-fill"></i> Add User
+                    </button>
+                    <button onClick={() => setIsSidePanelOpen(!isSidePanelOpen)} className="text-blue-400 hover:text-blue-300">
+                         <i className="ri-group-fill"></i>
+                    </button>
+                </header>
+                
+                <div ref={messageBoxRef} className="flex-1 overflow-y-auto p-4 space-y-4">
+                    {messages.map((msg, idx) => (
+                        <div key={idx} className={`p-2 rounded-lg max-w-[90%] break-words ${msg.isOwn ? "bg-blue-600 ml-auto" : "bg-gray-800"}`}>
+                            <small className="text-xs text-gray-400 block mb-1">{msg.senderEmail}</small>
+                            <p className="text-sm whitespace-pre-wrap">{msg.text}</p>
+                        </div>
+                    ))}
+                    {isAiLoading && (
+                        <div className="flex items-center gap-2 text-blue-400 bg-gray-800 p-2 rounded-lg max-w-[75%]">
+                             <i className="ri-loader-4-line animate-spin"></i>
+                             <span className="text-sm">Generating code...</span>
+                        </div>
+                    )}
                 </div>
-              ))}
+
+                <div className="p-2 bg-gray-800 flex gap-2 border-t border-gray-700">
+                    <input 
+                        value={currentMessage} 
+                        onChange={(e) => setCurrentMessage(e.target.value)}
+                        onKeyDown={(e) => e.key === "Enter" && send()}
+                        className="flex-1 bg-gray-700 p-2 rounded text-white outline-none focus:ring-1 focus:ring-blue-500" 
+                        placeholder="Type @ai to generate..."
+                    />
+                    <button onClick={send} className="bg-blue-600 p-2 rounded hover:bg-blue-500 transition">
+                        <i className="ri-send-plane-fill"></i>
+                    </button>
+                </div>
+            </section>
+
+            {/* 2. CODE EXPLORER (Middle - 40%) */}
+            <section className="w-2/5 bg-gray-950 flex flex-col border-r border-gray-800">
+                <header className="p-2 bg-gray-900 border-b border-gray-800 flex justify-between items-center px-4">
+                    <span className="font-bold text-gray-300">Editor</span>
+                    <button 
+                        onClick={runProject} 
+                        disabled={isRunning}
+                        className={`px-4 py-1 rounded-sm text-sm font-semibold transition flex items-center gap-2 ${
+                            isRunning 
+                            ? "bg-gray-600 cursor-not-allowed text-gray-300" 
+                            : "bg-blue-600 hover:bg-blue-500 text-white"
+                        }`}
+                    >
+                        {isRunning ? (
+                            <>
+                                <i className="ri-loader-4-line animate-spin"></i> Running...
+                            </>
+                        ) : (
+                            <>
+                                <i className="ri-play-fill"></i> Run
+                            </>
+                        )}
+                    </button>
+                </header>
+
+                <div className="flex-1 flex overflow-hidden">
+                    {/* File Tree Sidebar */}
+                    <div className="w-1/3 overflow-y-auto p-2 border-r border-gray-800">
+                         <div className="font-semibold text-xs text-gray-500 mb-2 tracking-wider">FILES</div>
+                        {Object.keys(fileTree).length > 0 ? renderFileTree(fileTree) : (
+                            <div className="text-gray-500 text-sm text-center mt-10">No files</div>
+                        )}
+                    </div>
+
+                    {/* Code Editor Area */}
+                    <div className="w-2/3 overflow-auto bg-gray-950">
+                        {currentFile ? (
+                            <div className="h-full">
+                                <div className="bg-gray-800 text-xs p-1 px-3 text-gray-300 border-b border-gray-700 sticky top-0">
+                                    {currentFile.name}
+                                </div>
+                                <SyntaxHighlighter 
+                                    language="javascript" 
+                                    style={dracula}
+                                    customStyle={{ margin: 0, height: '100%', fontSize: '13px' }}
+                                    showLineNumbers={true}
+                                >
+                                    {currentFile.content}
+                                </SyntaxHighlighter>
+                            </div>
+                        ) : (
+                            <div className="flex items-center justify-center h-full text-gray-600 text-sm">
+                                Select a file to view code
+                            </div>
+                        )}
+                    </div>
+                </div>
+            </section>
+
+            {/* 3. PREVIEW (Right - 35%) */}
+            <section className="w-[35%] bg-white flex flex-col h-full">
+                 <header className="p-2 bg-gray-100 border-b border-gray-300 flex items-center px-4">
+                    <span className="font-bold text-gray-700 text-sm">Browser Preview</span>
+                </header>
+                <div className="flex-1 bg-gray-50 flex items-center justify-center relative">
+                    {iframeUrl && !isRunning ? (
+                        <iframe src={iframeUrl} className="w-full h-full border-none" title="App Preview" />
+                    ) : (
+                         <div className="text-center text-gray-400">
+                            {isRunning ? (
+                                <div className="flex flex-col items-center gap-2">
+                                    <i className="ri-loader-2-line animate-spin text-4xl text-blue-500"></i>
+                                    <p>Installing dependencies & starting server...</p>
+                                </div>
+                            ) : (
+                                <div className="flex flex-col items-center gap-2">
+                                    <i className="ri-terminal-box-line text-4xl"></i>
+                                    <p>Click "Run" to view output</p>
+                                </div>
+                            )}
+                        </div>
+                    )}
+                </div>
+            </section>
+
+            {/* 4. OVERLAYS: MODAL & SIDE PANEL */}
+            
+            {/* Sliding Side Panel (Collaborators List) */}
+            <div className={`fixed top-0 left-0 h-full w-64 bg-gray-800 transform transition-transform duration-300 z-50 shadow-xl ${
+                isSidePanelOpen ? "translate-x-0" : "-translate-x-full"
+            }`}>
+                <div className="flex justify-between items-center p-4 border-b border-gray-700 bg-gray-900">
+                    <h2 className="text-lg font-semibold">Members</h2>
+                    <button onClick={() => setIsSidePanelOpen(false)} className="text-gray-400 hover:text-white">
+                        <i className="ri-close-line text-2xl"></i>
+                    </button>
+                </div>
+                <div className="p-2 space-y-2">
+                    {users.map(u => (
+                         <div key={u._id} className="flex items-center gap-2 p-2 hover:bg-gray-700 rounded cursor-pointer">
+                            <div className="w-8 h-8 rounded-full bg-gray-600 flex items-center justify-center">
+                                <i className="ri-user-fill"></i>
+                            </div>
+                            <span className="text-sm truncate">{u.email}</span>
+                        </div>
+                    ))}
+                </div>
             </div>
 
-            <div className="mt-4 flex justify-end">
-              <button
-                onClick={handleAddUsersToProject}
-                className="bg-blue-600 hover:bg-blue-500 px-4 py-2 rounded transition"
-              >
-                Add Users
-              </button>
-            </div>
-          </div>
-        </div>
-      )}
+            {/* Modal (Add Collaborators) */}
+            {isModalOpen && (
+                <div className="fixed inset-0 bg-black/70 flex items-center justify-center z-50">
+                    <div className="bg-gray-900 p-6 rounded-lg w-96 max-w-full border border-gray-700 shadow-2xl">
+                        <div className="flex justify-between items-center mb-4">
+                            <h3 className="text-xl font-semibold text-blue-400">Add Collaborators</h3>
+                            <button onClick={() => setIsModalOpen(false)} className="text-gray-400 hover:text-white">
+                                <i className="ri-close-line text-2xl"></i>
+                            </button>
+                        </div>
+                        
+                        <div className="max-h-60 overflow-y-auto space-y-2 mb-4">
+                            {users.map(u => (
+                                <div 
+                                    key={u._id} 
+                                    onClick={() => handleSelectUser(u._id)}
+                                    className={`flex items-center justify-between p-3 rounded cursor-pointer transition ${
+                                        selectedUsers.includes(u._id) ? "bg-blue-600" : "bg-gray-800 hover:bg-gray-700"
+                                    }`}
+                                >
+                                    <span className="text-sm">{u.email}</span>
+                                    {selectedUsers.includes(u._id) && <i className="ri-check-line text-white"></i>}
+                                </div>
+                            ))}
+                        </div>
 
-      {/* Right Panel - WebContainer Preview */}
-      <section className="w-1/2 flex flex-col bg-gray-900">
-        {iframeUrl && (
-          <iframe
-            src={iframeUrl}
-            className="w-full h-full border-none"
-            title="Preview"
-          />
-        )}
-        {!iframeUrl && <div className="text-center mt-20">Waiting for AI to build...</div>}
-      </section>
-    </main>
-  );
+                        <div className="flex justify-end">
+                            <button 
+                                onClick={handleAddUsersToProject}
+                                className="bg-blue-500 hover:bg-blue-600 text-white px-4 py-2 rounded transition font-medium"
+                            >
+                                Add Selected
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+        </main>
+    );
 };
 
 export default Project;
