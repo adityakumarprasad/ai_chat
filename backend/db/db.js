@@ -1,14 +1,12 @@
 import mongoose from "mongoose";
 
+async function connect(mongoUri = process.env.MONGODB_URI) {
+  if (!mongoUri) {
+    throw new Error("MONGODB_URI is not configured");
+  }
 
-function connect() {
-    mongoose.connect(process.env.MONGODB_URI)
-        .then(() => {
-            console.log("Connected to MongoDB");
-        })
-        .catch(err => {
-            console.log(err);
-        })
+  await mongoose.connect(mongoUri);
+  console.log("Connected to MongoDB");
 }
 
 export default connect;

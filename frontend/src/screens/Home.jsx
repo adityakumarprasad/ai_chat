@@ -54,24 +54,31 @@ export default function Home() {
 
   if (loading) {
     return (
-      <div className="h-screen w-screen bg-gradient-to-br from-black via-blue-900 to-blue-950 flex items-center justify-center">
+      <div className="min-h-[calc(100vh-158px)] w-full bg-transparent flex items-center justify-center px-4 py-16">
         <div className="text-white text-xl">Loading projects...</div>
       </div>
     );
   }
 
   return (
-    <div className="h-screen w-screen bg-gradient-to-br from-black via-blue-900 to-blue-950 flex flex-col items-center justify-center p-4">
-      <div className="w-full max-w-4xl">
-        <h1 className="text-4xl font-bold text-white mb-8 text-center">
-          My Projects
-        </h1>
+    <div className="relative flex min-h-[calc(100vh-158px)] w-full flex-col items-center justify-center overflow-hidden px-4 py-16">
+      <div className="absolute left-1/2 top-20 h-72 w-72 -translate-x-1/2 rounded-full bg-cyan-400/15 blur-3xl"></div>
+      <div className="w-full max-w-5xl">
+        <div className="mb-10 text-center">
+          <p className="mb-3 text-xs uppercase tracking-[0.5em] text-cyan-200/70">AI Collaboration Workspace</p>
+          <h1 className="app-glow text-5xl font-black text-white md:text-6xl">
+            Collab-Ai
+          </h1>
+          <p className="mx-auto mt-4 max-w-2xl text-sm text-slate-300 md:text-base">
+            Real-time teamwork, AI-assisted project scaffolding, and a smoother launchpad for your next build.
+          </p>
+        </div>
 
         {/* Create New Project Button */}
         <div className="flex justify-center mb-8">
           <button
             onClick={() => setIsOpen(true)}
-            className="flex items-center gap-2 px-6 py-3 bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all duration-300 hover:scale-105"
+            className="flex items-center gap-2 rounded-full border border-cyan-300/30 bg-cyan-400/15 px-6 py-3 text-white shadow-[0_0_30px_rgba(34,211,238,0.18)] transition-all duration-300 hover:scale-105 hover:bg-cyan-300/20"
           >
             <Link className="w-5 h-5" />
             <span>Create New Project</span>
@@ -80,7 +87,7 @@ export default function Home() {
 
         {/* Projects Grid */}
         {projects.length === 0 ? (
-          <div className="text-center text-gray-400 py-12">
+          <div className="rounded-[2rem] border border-white/10 bg-white/5 px-8 py-12 text-center text-gray-300 backdrop-blur-xl">
             <p className="text-xl mb-4">No projects yet</p>
             <p className="text-sm">Create your first project to get started!</p>
           </div>
@@ -90,10 +97,10 @@ export default function Home() {
               <div
                 key={project._id}
                 onClick={() => handleProjectClick(project._id)}
-                className="bg-gradient-to-br from-gray-900 to-blue-900 rounded-xl p-6 cursor-pointer hover:scale-105 transition-all duration-300 border border-blue-500/30 hover:border-blue-500"
+                className="rounded-[1.75rem] border border-cyan-300/15 bg-[linear-gradient(145deg,rgba(15,23,42,0.92),rgba(12,74,110,0.62))] p-6 cursor-pointer backdrop-blur-xl transition-all duration-300 hover:-translate-y-1 hover:scale-[1.02] hover:border-cyan-300/45 hover:shadow-[0_18px_60px_rgba(34,211,238,0.15)]"
               >
                 <div className="flex items-center gap-3 mb-3">
-                  <div className="w-12 h-12 bg-blue-600 rounded-lg flex items-center justify-center">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-2xl bg-cyan-400/15 ring-1 ring-cyan-200/20">
                     <i className="ri-folder-line text-2xl text-white"></i>
                   </div>
                   <div className="flex-1">
@@ -115,7 +122,7 @@ export default function Home() {
       {/* Create Project Modal */}
       {isOpen && (
         <div className="fixed inset-0 bg-black/70 backdrop-blur-sm flex items-center justify-center p-4 z-50">
-          <div className="relative w-full max-w-md bg-gradient-to-br from-gray-900 to-blue-900 rounded-2xl shadow-2xl border border-blue-500/30 p-8">
+          <div className="relative w-full max-w-md rounded-[2rem] border border-cyan-300/20 bg-[linear-gradient(160deg,rgba(2,6,23,0.98),rgba(8,47,73,0.95))] p-8 shadow-2xl shadow-cyan-950/40">
             <button
               onClick={() => setIsOpen(false)}
               className="absolute top-4 right-4 text-gray-400 hover:text-white transition-colors"

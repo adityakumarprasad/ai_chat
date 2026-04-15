@@ -1,12 +1,10 @@
 @import "tailwindcss";
 :root {
-  font-family: system-ui, Avenir, Helvetica, Arial, sans-serif;
+  font-family: "Segoe UI", Tahoma, Geneva, Verdana, sans-serif;
   line-height: 1.5;
   font-weight: 400;
-
-  color-scheme: light dark;
   color: rgba(255, 255, 255, 0.87);
-  background-color: #242424;
+  background-color: #050816;
 
   font-synthesis: none;
   text-rendering: optimizeLegibility;
@@ -14,56 +12,76 @@
   -moz-osx-font-smoothing: grayscale;
 }
 
-a {
-  font-weight: 500;
-  color: #646cff;
-  text-decoration: inherit;
+* {
+  box-sizing: border-box;
 }
-a:hover {
-  color: #535bf2;
+
+html {
+  min-width: 320px;
+  min-height: 100%;
+  background: #050816;
 }
 
 body {
   margin: 0;
-  display: flex;
-  place-items: center;
+  min-height: 100vh;
   min-width: 320px;
+  background: #050816;
+}
+
+#root {
   min-height: 100vh;
 }
 
-h1 {
-  font-size: 3.2em;
-  line-height: 1.1;
+a {
+  color: inherit;
+  text-decoration: none;
 }
 
-button {
-  border-radius: 8px;
-  border: 1px solid transparent;
-  padding: 0.6em 1.2em;
-  font-size: 1em;
-  font-weight: 500;
-  font-family: inherit;
-  background-color: #1a1a1a;
-  cursor: pointer;
-  transition: border-color 0.25s;
-}
-button:hover {
-  border-color: #646cff;
-}
-button:focus,
-button:focus-visible {
-  outline: 4px auto -webkit-focus-ring-color;
+.app-glow {
+  text-shadow: 0 0 20px rgba(103, 232, 249, 0.28), 0 0 40px rgba(59, 130, 246, 0.18);
+  animation: titlePulse 5s ease-in-out infinite;
 }
 
-@media (prefers-color-scheme: light) {
-  :root {
-    color: #213547;
-    background-color: #ffffff;
+.app-float {
+  animation: floatMark 3.8s ease-in-out infinite;
+}
+
+.app-scan {
+  animation: scanLine 8s linear infinite;
+}
+
+@keyframes titlePulse {
+  0%, 100% {
+    transform: translateY(0);
+    opacity: 0.92;
   }
-  a:hover {
-    color: #747bff;
+  50% {
+    transform: translateY(-4px);
+    opacity: 1;
   }
-  button {
-    background-color: #f9f9f9;
+}
+
+@keyframes floatMark {
+  0%, 100% {
+    transform: translateY(0px);
+  }
+  50% {
+    transform: translateY(-5px);
+  }
+}
+
+@keyframes scanLine {
+  0% {
+    transform: translateX(-35%);
+    opacity: 0;
+  }
+  25%,
+  75% {
+    opacity: 1;
+  }
+  100% {
+    transform: translateX(35%);
+    opacity: 0;
   }
 }

@@ -1,30 +1,58 @@
-import morgan from 'morgan';
-import express from 'express';
-import userRoutes from './routes/user.routes.js';
-import projectRoutes from './routes/project.route.js';
-import dotenv from 'dotenv';
-dotenv.config();
-import aiRoutes from './routes/ai.routes.js';
-import cors from 'cors';
+import "dotenv/config";
+import morgan from "morgan";
+import express from "express";
+import cors from "cors";
+import cookieParser from "cookie-parser";
+import userRoutes from "./routes/user.routes.js";
+import projectRoutes from "./routes/project.route.js";
+import aiRoutes from "./routes/ai.routes.js";
+import { createFallbackRedisClient } from "./config/services.js";
+import { getEnvConfig } from "./config/env.js";
 
+export function createApp(options = {}) {
+  const app = express();
+  const env = getEnvConfig();
+  const allowedOrigins = options.clientUrls || env.clientUrls;
 
-import cookieParser from 'cookie-parser';
-import redisClient from './services/redis.service.js';
-const app = express();
-app.use(cors({
-  origin: 'http://localhost:5173', // Adjust this to your frontend's origin
-  credentials: true // Allow cookies to be sent
-}));
-app.use(morgan('dev'));
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
-app.use(cookieParser()); 
-app.use('/users', userRoutes);
-app.use('/projects', projectRoutes);
-app.use('/ai', aiRoutes);
+  app.locals.redisClient = options.redisClient || createFallbackRedisClient();
 
-app.get('/', (req, res) => {
-  res.send('API is running...');
-});
+  app.use((req, res, next) => {
+    res.setHeader("Cross-Origin-Embedder-Policy", "require-corp");
+    res.setHeader("Cross-Origin-Opener-Policy", "same-origin");
+    next();
+  });
+
+  app.use(
+    cors({
+      origin(origin, callback) {
+        if (!origin || allowedOrigins.includes(origin)) {
+          return callback(null, true);
+        }
+
+        return callback(new Error("CORS origin not allowed"));
+      },
+      credentials: true,
+    })
+  );
+  app.use(morgan("dev"));
+  app.use(express.json());
+  app.use(express.urlencoded({ extended: true }));
+  app.use(cookieParser());
+  app.use("/users", userRoutes);
+  app.use("/projects", projectRoutes);
+  app.use("/ai", aiRoutes);
+
+  app.get("/", (req, res) => {
+    res.send("API is running...");
+  });
+
+  app.get("/health", (req, res) => {
+    res.status(200).json({ status: "ok", env: env.nodeEnv });
+  });
+
+  return app;
+}
+
+const app = createApp();
 
 export default app;

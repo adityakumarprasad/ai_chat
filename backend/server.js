@@ -1,6 +1,3 @@
-
-// import dotenv from 'dotenv'
-// dotenv.config()
 import 'dotenv/config';
 import http from 'http'
 import app from './app.js'
@@ -9,15 +6,17 @@ import jwt from 'jsonwebtoken'
 import { Server } from 'socket.io'
 import mongoose from 'mongoose';
 import Project from './models/project.model.js'
-import cors from "cors"
+import { createRedisClient } from './services/redis.service.js';
+import { createFallbackRedisClient } from './config/services.js';
+import { getEnvConfig } from './config/env.js';
 
-connect()
+const env = getEnvConfig();
 
 const server = http.createServer(app)
 
 const io = new Server(server, { 
   cors: { 
-    origin: "*", // Adjust this to your frontend's origin
+    origin: env.clientUrls,
     methods: ["GET", "POST"],
     credentials: true
   }
@@ -76,9 +75,28 @@ io.on("connection",(socket)=>{
   })
 })
 
-const PORT = process.env.PORT || 5000
+async function bootstrap() {
+  if (!env.jwtSecret) {
+    throw new Error("JWT_SECRET is not configured");
+  }
 
+  await connect(env.mongoUri);
 
-server.listen(PORT, () => {
-  console.log(`Server running on port ${PORT}`)
-})
+  const redisClient = createRedisClient(env.redisUrl);
+  if (redisClient) {
+    await redisClient.connect();
+    app.locals.redisClient = redisClient;
+  } else {
+    console.warn("REDIS_URL is not configured. Falling back to in-memory token blacklist.");
+    app.locals.redisClient = createFallbackRedisClient();
+  }
+
+  server.listen(env.port, () => {
+    console.log(`Server running on port ${env.port}`);
+  });
+}
+
+bootstrap().catch((error) => {
+  console.error("Server bootstrap failed:", error);
+  process.exit(1);
+});

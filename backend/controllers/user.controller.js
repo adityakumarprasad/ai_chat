@@ -1,9 +1,10 @@
 import * as userService from "../services/user.service.js";
 import User from "../models/user.model.js";
 import { validationResult } from "express-validator";
-import redisClient from "../services/redis.service.js";
+import { getCookieOptions, getEnvConfig } from "../config/env.js";
 
 
+const cookieOptions = getCookieOptions(getEnvConfig().isProduction);
 
 // Create User
 export const createUserController = async (req, res) => {
@@ -18,9 +19,7 @@ export const createUserController = async (req, res) => {
 
     delete user._doc.password;
 
-    res.cookie("token", token, {
-      maxAge: 24 * 60 * 60 * 1000,
-    });
+    res.cookie("token", token, cookieOptions);
 
     res.status(201).json({
       message: "User created successfully",
@@ -55,10 +54,7 @@ export const loginUserController = async (req, res) => {
     const token = user.generateAuthToken();
     delete user._doc.password;
 
-    res.cookie("token", token, {
-  
-      maxAge: 24 * 60 * 60 * 1000,
-    });
+    res.cookie("token", token, cookieOptions);
 
     res.status(200).json({
       message: "Login successful",
@@ -82,10 +78,13 @@ export const profileController = (req, res) => {
 export const logoutController = (req, res) => {
   try {
     const token = req.cookies.token || req.headers.authorization?.split(" ")[1];
+    const redisClient = req.app.locals.redisClient;
 
-    redisClient.set(token, "blacklisted", "EX", 3600 * 24);
+    if (token && redisClient) {
+      redisClient.set(token, "blacklisted", { EX: 3600 * 24 });
+    }
 
-    res.clearCookie("token");
+    res.clearCookie("token", cookieOptions);
 
     res.status(200).json({ message: "Logout successful" });
   } catch (err) {
